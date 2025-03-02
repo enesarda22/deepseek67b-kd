@@ -1,6 +1,7 @@
 import os
 import random
 from datasets import load_dataset, Dataset
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
 if __name__ == "__main__":
@@ -16,13 +17,14 @@ if __name__ == "__main__":
         "togethercomputer/RedPajama-Data-1T",
         "default",
         split="train",
-        streaming=True
+        streaming=True,
+        trust_remote_code=True,
     )
 
     samples = []
     count = 0
 
-    for example in redpajama_ds:
+    for example in tqdm(redpajama_ds):
         samples.append(example)
         count += 1
         if count >= NUM_SAMPLES:
