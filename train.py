@@ -246,7 +246,7 @@ if __name__ == "__main__":
         max_epochs=EPOCHS,
         default_root_dir=OUTPUT_DIR,
         logger=wandb_logger,
-        precision="fp16",
+        precision="16-mixed",
         # optional mixed precision
         accelerator="gpu" if torch.cuda.is_available() else "mps",
         devices="auto",
