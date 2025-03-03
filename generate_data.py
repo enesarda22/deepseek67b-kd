@@ -6,7 +6,7 @@ from transformers import AutoTokenizer
 
 if __name__ == "__main__":
     NUM_SAMPLES = 100_000
-    MAX_LENGTH = 1024
+    MAX_LENGTH = 512
 
     TOKENIZER_PATH = "gpt2"
     OUTPUT_DIR = "data"
