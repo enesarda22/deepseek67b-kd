@@ -2,6 +2,7 @@ import os
 
 import torch
 import torch.nn as nn
+from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 from datasets import load_from_disk
 from transformers import (
@@ -145,12 +146,11 @@ class DistillationModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
-        labels = batch["labels"]
 
         outputs = self.student_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            labels=labels,
+            labels=input_ids,
             return_dict=True
         )
         val_loss = outputs.loss
@@ -184,10 +184,17 @@ if __name__ == "__main__":
     OUTPUT_DIR = "models/lightning_student_output"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    BATCH_SIZE = 2
-    EPOCHS = 1
+    BATCH_SIZE = 512
+    EPOCHS = 10
     LEARNING_RATE = 1e-4
     WARMUP_STEPS = 1000
+    ALPHA = 0.8
+    TEMPERATURE = 2.0
+
+    wandb_logger = WandbLogger(
+        name=f"T:{TEACHER_CKPT}, S:{STUDENT_CKPT}",
+        project="deepseek67b-kd",
+    )
 
     # Load Dataset
     print(f"Loading dataset from {DATASET_PATH} ...")
@@ -227,8 +234,8 @@ if __name__ == "__main__":
         student_model_name_or_path=STUDENT_CKPT,
         teacher_model_name_or_path=TEACHER_CKPT,
         tokenizer=tokenizer,
-        alpha=0.8,
-        temperature=2.0,
+        alpha=ALPHA,
+        temperature=TEMPERATURE,
         learning_rate=LEARNING_RATE,
         warmup_steps=WARMUP_STEPS,
         total_steps=(len(train_ds) // BATCH_SIZE) * EPOCHS,
@@ -238,11 +245,11 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
         default_root_dir=OUTPUT_DIR,
-        precision=16 if torch.cuda.is_available() else 32,
+        logger=wandb_logger,
+        precision="bf16-mixed",
         # optional mixed precision
         accelerator="gpu" if torch.cuda.is_available() else "mps",
-        devices=1,  # or more GPUs
-        val_check_interval=0.25,  # validate 4 times per epoch, for example
+        devices="auto",
     )
     trainer.fit(distill_module, train_loader, val_loader)
 
