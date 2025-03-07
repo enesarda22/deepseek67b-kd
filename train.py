@@ -247,9 +247,10 @@ if __name__ == "__main__":
         default_root_dir=OUTPUT_DIR,
         logger=wandb_logger,
         precision="16-mixed",
-        # optional mixed precision
-        accelerator="gpu" if torch.cuda.is_available() else "mps",
-        devices="auto",
+        accelerator="gpu",
+        devices=4,
+        strategy="ddp",
+        num_nodes=1,
     )
     trainer.fit(distill_module, train_loader, val_loader)
 
