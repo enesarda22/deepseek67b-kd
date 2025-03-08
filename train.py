@@ -248,9 +248,6 @@ if __name__ == "__main__":
         logger=wandb_logger,
         precision="16-mixed",
         accelerator="gpu",
-        devices=4,
-        strategy="ddp",
-        num_nodes=1,
     )
     trainer.fit(distill_module, train_loader, val_loader)
 
