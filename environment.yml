@@ -2,12 +2,13 @@ name: deepseek67b-kd
 channels:
   - conda-forge
   - defaults
-  - nvidia  # For CUDA packages
+  - nvidia  # For cuda
+  - pytorch  # Add this for official PyTorch packages
 dependencies:
   - python=3.10
-  - pytorch=2.4.1=cuda124_*  # CUDA 12.4 version of PyTorch
-  - torchaudio=2.4.1=cuda124_*  # Matching CUDA version
-  - torchvision=0.19.1=cuda124_*  # Matching CUDA version
+  - pytorch=2.4.1
+  - torchaudio=2.4.1
+  - torchvision=0.19.1
   - transformers
   - datasets
   - conda-forge::pytorch-lightning
