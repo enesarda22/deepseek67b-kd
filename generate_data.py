@@ -1,46 +1,43 @@
+import itertools
 import os
-import random
-from datasets import load_dataset, Dataset
-from tqdm import tqdm
-from transformers import AutoTokenizer
+
+import numpy as np
+from datasets import load_dataset
+from transformers import AutoTokenizer, set_seed, pipeline
+
 
 if __name__ == "__main__":
-    NUM_SAMPLES = 100_000
+    NUM_TOKENS = 1_000_000
+    MAX_NEW_TOKENS = 1024
+    BATCH_SIZE = 32
 
-    TOKENIZER_PATH = "gpt2"
-    OUTPUT_DIR = "data"
-    ds_path = "HuggingFaceFW/fineweb-edu"
+    TEACHER_MODEL = "gpt2"
+    STUDENT_MODEL = "TinyLlama/TinyLlama_v1.1"
+    DS = "HuggingFaceFW/fineweb-edu"
+    OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    random.seed(42)
-    ds = load_dataset(ds_path, name="sample-10BT", split="train", streaming=True)
+    set_seed(42)
+    ds = load_dataset(DS, name="sample-10BT", split="train", streaming=True)
+    generator = pipeline("text-generation", model=TEACHER_MODEL)
+    student_tokenizer = AutoTokenizer.from_pretrained(STUDENT_MODEL)
 
-    samples = []
+    input_ids_np = np.empty(NUM_TOKENS, dtype=np.uint32)
     count = 0
+    for batch in ds.iter(batch_size=BATCH_SIZE):
+        generated_texts = generator(batch["text"], max_new_tokens=MAX_NEW_TOKENS, temperature=1.1, top_p=0.9, do_sample=True)
+        generated_texts = [b[0]["generated_text"] for b in generated_texts]
 
-    for example in tqdm(ds):
-        samples.append({"text": example["text"]})
-        count += 1
-        if count >= NUM_SAMPLES:
+        tokens = student_tokenizer(generated_texts)
+        input_ids = list(itertools.chain.from_iterable(tokens["input_ids"]))
+
+        if count+len(input_ids) > NUM_TOKENS:
+            input_ids_np[count:] = input_ids[:NUM_TOKENS-count]
             break
+        else:
+            input_ids_np[count:count+len(input_ids)] = input_ids
+            count += len(input_ids)
 
-    raw_dataset = Dataset.from_list(samples)
-    print(f"Final raw subset size: {len(raw_dataset)}")
-
-    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_PATH)
-
-
-    def tokenize_fn(samples):
-        tokens = tokenizer(samples["text"])
-
-        tokens["input_ids"] = [[tokenizer.eos_token_id] + input_ids + [tokenizer.eos_token_id] for input_ids in tokens["input_ids"]]
-        tokens["attention_mask"] = [[1] + attention_mask + [1] for attention_mask in tokens["attention_mask"]]
-        return tokens
-
-
-    tokenized_dataset = raw_dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
-    print("Tokenization complete.")
-    print(tokenized_dataset)
-
-    tokenized_dataset.save_to_disk(os.path.join(OUTPUT_DIR, f"{TOKENIZER_PATH}_tokenized_fineweb-edu"))
+    fn = os.path.join(OUTPUT_DIR, "tokenized_fineweb-edu")
+    np.save(fn, input_ids_np)
     print(f"Saved tokenized under: {OUTPUT_DIR}")
