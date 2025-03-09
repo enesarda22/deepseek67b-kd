@@ -4,12 +4,12 @@ import torch
 import torch.nn as nn
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
+from torch.optim import AdamW
 from datasets import load_from_disk
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
-    AdamW,
-    get_linear_schedule_with_warmup
+    get_cosine_schedule_with_warmup
 )
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
@@ -59,12 +59,14 @@ def data_collator(features, tokenizer):
     attention_mask = [torch.tensor(f["attention_mask"], dtype=torch.long) for f in features]
 
     # pad
-    padding_value = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else -100
+    padding_value = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    labels = nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=-100)
     input_ids = nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=padding_value)
     attention_mask = nn.utils.rnn.pad_sequence(attention_mask, batch_first=True, padding_value=0)
 
     return {
         "input_ids": input_ids,
+        "labels": labels,
         "attention_mask": attention_mask,
     }
 
@@ -79,7 +81,6 @@ class DistillationModule(pl.LightningModule):
             temperature=1.0,
             learning_rate=1e-4,
             warmup_steps=1000,
-            total_steps=100_000,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["tokenizer"])
@@ -90,7 +91,6 @@ class DistillationModule(pl.LightningModule):
         self.temperature = temperature
         self.learning_rate = learning_rate
         self.warmup_steps = warmup_steps
-        self.total_steps = total_steps
 
         # Load models
         self.student_model = AutoModelForCausalLM.from_pretrained(student_model_name_or_path)
@@ -110,13 +110,14 @@ class DistillationModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         input_ids = batch["input_ids"]
+        labels = batch["labels"]
         attention_mask = batch["attention_mask"]
 
         # Forward student
         student_outputs = self.student_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            labels=input_ids,
+            labels=labels,
             return_dict=True
         )
         student_logits = student_outputs.logits
@@ -145,12 +146,13 @@ class DistillationModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         input_ids = batch["input_ids"]
+        labels = batch["labels"]
         attention_mask = batch["attention_mask"]
 
         outputs = self.student_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            labels=input_ids,
+            labels=labels,
             return_dict=True
         )
         val_loss = outputs.loss
@@ -163,13 +165,17 @@ class DistillationModule(pl.LightningModule):
         optimizer = AdamW(
             self.student_model.parameters(),
             lr=self.learning_rate,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=0.1,
+            fused=True,
         )
 
         # Linear scheduler
-        scheduler = get_linear_schedule_with_warmup(
+        scheduler = get_cosine_schedule_with_warmup(
             optimizer,
             num_warmup_steps=self.warmup_steps,
-            num_training_steps=self.total_steps,
+            num_training_steps=self.trainer.estimated_stepping_batches,
         )
         return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
@@ -184,7 +190,7 @@ if __name__ == "__main__":
     OUTPUT_DIR = "models/lightning_student_output"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    BATCH_SIZE = 512
+    BATCH_SIZE = 8
     EPOCHS = 10
     LEARNING_RATE = 1e-4
     WARMUP_STEPS = 1000
@@ -220,13 +226,13 @@ if __name__ == "__main__":
         train_ds,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        collate_fn=train_collate_fn
+        collate_fn=train_collate_fn,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        collate_fn=train_collate_fn
+        collate_fn=train_collate_fn,
     )
 
     # Create Lightning Module (DistillationModule)
@@ -238,14 +244,16 @@ if __name__ == "__main__":
         temperature=TEMPERATURE,
         learning_rate=LEARNING_RATE,
         warmup_steps=WARMUP_STEPS,
-        total_steps=(len(train_ds) // BATCH_SIZE) * EPOCHS,
     )
+    distill_module = torch.compile(distill_module)
 
     # Setup Trainer
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
         default_root_dir=OUTPUT_DIR,
         logger=wandb_logger,
+        gradient_clip_val=1.0,
+        accumulate_grad_batches=4,
         precision="16-mixed",
         accelerator="gpu",
     )
