@@ -3,13 +3,15 @@ channels:
   - conda-forge
   - defaults
   - nvidia  # For cuda
-  - pytorch  # Add this for official PyTorch packages
+  - pytorch
 dependencies:
   - python=3.10
   - pytorch=2.4.1
   - torchaudio=2.4.1
   - torchvision=0.19.1
   - transformers
+  - accelerate
   - datasets
+  - evaluate
   - conda-forge::pytorch-lightning
   - wandb
