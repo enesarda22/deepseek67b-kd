@@ -69,7 +69,7 @@ class DistillationModule(pl.LightningModule):
             labels=input_ids,
         )
 
-        self.log("train_loss", outputs.loss, on_step=True)
+        self.log("train_loss", outputs.loss, on_step=True, prog_bar=True)
         return outputs.loss
 
     def validation_step(self, batch, batch_idx):
@@ -89,7 +89,6 @@ class DistillationModule(pl.LightningModule):
             betas=(0.9, 0.95),
             eps=1e-8,
             weight_decay=0.1,
-            fused=True,
         )
 
         scheduler = get_cosine_schedule_with_warmup(
@@ -105,8 +104,8 @@ if __name__ == "__main__":
 
     # Paths
     DATASET_PATH = "data/tokenized_fineweb-edu.npy"
-    STUDENT_CKPT = "TinyLlama/TinyLlama_v1.1"
-    OUTPUT_DIR = "models/DistTinyLlama-1B"
+    STUDENT_CKPT = "./llama2-7b-hf"
+    OUTPUT_DIR = "models/DistLlama2-7B"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     BATCH_SIZE = 1
@@ -118,7 +117,7 @@ if __name__ == "__main__":
     TEMPERATURE = 2.0
 
     wandb_logger = WandbLogger(
-        name="T: DeepSeek-67B, S: TinyLLama-1B",
+        name="T: DeepSeek-67B, S: Llama2-7B",
         project="deepseek67b-kd",
     )
 
@@ -130,8 +129,8 @@ if __name__ == "__main__":
     train_input_ids_np = input_ids_np[:train_size]
     test_input_ids_np = input_ids_np[train_size:]
 
-    train_ds = MyDataset(input_ids_np, num_samples_per_epoch=2 * train_size)
-    val_ds = MyDataset(input_ids_np, num_samples_per_epoch=len(test_input_ids_np))
+    train_ds = MyDataset(input_ids_np, num_samples_per_epoch=2 * (train_size // MAX_LENGTH))
+    val_ds = MyDataset(input_ids_np, num_samples_per_epoch=len(test_input_ids_np) // MAX_LENGTH)
     print(f"Train set: {len(train_ds)}, Val set: {len(val_ds)}")
 
     train_loader = DataLoader(
@@ -146,6 +145,8 @@ if __name__ == "__main__":
         shuffle=False,
         num_workers=4,
     )
+
+    torch.set_float32_matmul_precision("high")
 
     # Create Lightning Module (DistillationModule)
     distill_module = DistillationModule(
@@ -162,10 +163,10 @@ if __name__ == "__main__":
         max_epochs=EPOCHS,
         default_root_dir=OUTPUT_DIR,
         logger=wandb_logger,
-        val_check_interval=0.2,
+        val_check_interval=0.5,
         gradient_clip_val=1.0,
-        accumulate_grad_batches=4,
-        precision="16-mixed",
+        accumulate_grad_batches=32,
+        precision="bf16-mixed",
         accelerator="auto",
     )
     trainer.fit(distill_module, train_loader, val_loader)
