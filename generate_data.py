@@ -27,8 +27,8 @@ def generate_text(batch):
 
 if __name__ == "__main__":
     NUM_TOKENS = 1_000_000
-    MAX_NEW_TOKENS = 32
-    BATCH_SIZE = 1
+    MAX_NEW_TOKENS = 512
+    BATCH_SIZE = 8
 
     TEACHER_MODEL = "deepseek-ai/deepseek-llm-67b-base"
     STUDENT_MODEL = "TinyLlama/TinyLlama_v1.1"
