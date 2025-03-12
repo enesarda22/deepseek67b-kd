@@ -1,28 +1,16 @@
-import itertools
 import os
 from tqdm import tqdm
 
-import torch
 import numpy as np
 from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer, set_seed
+from transformers import AutoTokenizer, set_seed
+
+from llama_cpp import Llama
 
 
-def generate_text(batch):
-    inputs = teacher_tokenizer(batch, return_tensors="pt", padding=True, truncation=True).to("cuda")
-
-    # Generate text
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=MAX_NEW_TOKENS,
-        do_sample=True,
-        temperature=1.1,
-        top_p=0.9,
-        pad_token_id=teacher_tokenizer.eos_token_id
-    )
-
-    generated_texts = teacher_tokenizer.batch_decode(outputs, skip_special_tokens=True)
-    return generated_texts
+def generate_text(text):
+    output = model(text, max_tokens=MAX_NEW_TOKENS, echo=True, temperature=1.1, top_p=0.9)
+    return output["choices"][0]["text"]
 
 
 if __name__ == "__main__":
@@ -41,29 +29,18 @@ if __name__ == "__main__":
     ds = load_dataset(DS, name="sample-10BT", split="train", streaming=True)
     print("Dataset loaded!")
 
-    teacher_tokenizer = AutoTokenizer.from_pretrained(TEACHER_MODEL)
-    model = AutoModelForCausalLM.from_pretrained(
-        TEACHER_MODEL,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
-        offload_folder="offload",
-        offload_state_dict=True,
-    )
-    print(f"Teacher model loaded to {model.hf_device_map}")
-
-    model = torch.compile(model)
-    model.eval()
-    print("Teacher model compiled!")
+    model = Llama(model_path=TEACHER_MODEL, n_ctx=2048)
+    print("Teacher model loaded!")
 
     student_tokenizer = AutoTokenizer.from_pretrained(STUDENT_MODEL)
 
     input_ids_np = np.empty(NUM_TOKENS, dtype=np.uint32)
     count = 0
-    for batch in tqdm(ds.iter(batch_size=BATCH_SIZE)):
-        generated_texts = generate_text(batch["text"])
+    for sample in tqdm(ds):
+        generated_text = generate_text(sample["text"])
 
-        tokens = student_tokenizer(generated_texts)
-        input_ids = list(itertools.chain.from_iterable(tokens["input_ids"]))
+        tokens = student_tokenizer(generated_text)
+        input_ids = tokens["input_ids"]
 
         if count+len(input_ids) > NUM_TOKENS:
             input_ids_np[count:] = input_ids[:NUM_TOKENS-count]
