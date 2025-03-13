@@ -1,3 +1,4 @@
+import itertools
 import os
 from tqdm import tqdm
 
@@ -5,17 +6,19 @@ import numpy as np
 from datasets import load_dataset
 from transformers import AutoTokenizer, set_seed
 
-from llama_cpp import Llama
+from vllm import LLM, SamplingParams
 
 
-def generate_text(text):
-    output = model(text, max_tokens=MAX_NEW_TOKENS, echo=True, temperature=1.1, top_p=0.9)
-    return output["choices"][0]["text"]
+def generate_text(batch):
+    sampling_params = SamplingParams(temperature=1.1, top_p=0.9, max_tokens=MAX_NEW_TOKENS)
+    outputs = llm.generate(batch, sampling_params)
+    generated_texts = [output.prompt + output.outputs[0].text for output in outputs]
+    return generated_texts
 
 
 if __name__ == "__main__":
     NUM_TOKENS = 1_000_000
-    MAX_NEW_TOKENS = 512
+    MAX_NEW_TOKENS = 10  # hf: 222 tok/s, llama.cpp: 500 tok/s, vllm: 544
     BATCH_SIZE = 8
 
     TEACHER_MODEL = "deepseek-ai/deepseek-llm-67b-base"
@@ -29,18 +32,19 @@ if __name__ == "__main__":
     ds = load_dataset(DS, name="sample-10BT", split="train", streaming=True)
     print("Dataset loaded!")
 
-    model = Llama(model_path=TEACHER_MODEL, n_ctx=2048)
+    llm = LLM(model="deepseek-ai/deepseek-llm-67b-base", dtype="bfloat16", trust_remote_code=True,
+              quantization="bitsandbytes", load_format="bitsandbytes", tensor_parallel_size=4)
     print("Teacher model loaded!")
 
     student_tokenizer = AutoTokenizer.from_pretrained(STUDENT_MODEL)
 
     input_ids_np = np.empty(NUM_TOKENS, dtype=np.uint32)
     count = 0
-    for sample in tqdm(ds):
-        generated_text = generate_text(sample["text"])
+    for batch in tqdm(ds.iter(BATCH_SIZE)):
+        generated_text = generate_text(batch["text"])
 
         tokens = student_tokenizer(generated_text)
-        input_ids = tokens["input_ids"]
+        input_ids = list(itertools.chain.from_iterable(tokens["input_ids"]))
 
         if count+len(input_ids) > NUM_TOKENS:
             input_ids_np[count:] = input_ids[:NUM_TOKENS-count]

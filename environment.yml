@@ -6,9 +6,8 @@ channels:
   - pytorch
 dependencies:
   - python=3.10
-  - pytorch=2.4.1
-  - torchaudio=2.4.1
-  - torchvision=0.19.1
+  - pytorch
+  - vllm
   - transformers
   - sentencepiece
   - accelerate
