@@ -10,7 +10,6 @@ dependencies:
   - transformers
   - sentencepiece
   - accelerate
-  - bitsandbytes
   - scikit-learn
   - datasets
   - evaluate
@@ -19,3 +18,4 @@ dependencies:
   - pip
   - pip:
     - vllm
+    - bitsandbytes
