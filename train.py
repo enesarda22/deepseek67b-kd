@@ -11,6 +11,7 @@ from transformers import (
 )
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 
 def print_parameter_counts(model, model_name):
@@ -22,22 +23,25 @@ class DistillationModule(pl.LightningModule):
     def __init__(
             self,
             student_model_name,
-            alpha=0.8,
-            temperature=1.0,
             learning_rate=1e-4,
             warmup_steps=1000,
+            betas=(0.9, 0.95),
+            eps = 1e-8,
+            weight_decay = 0.1,
     ):
         super().__init__()
         self.save_hyperparameters()
 
-        self.alpha = alpha
-        self.temperature = temperature
         self.learning_rate = learning_rate
         self.warmup_steps = warmup_steps
+        self.betas = betas
+        self.eps = eps
+        self.weight_decay = weight_decay
 
         # Load models
         self.student_model = AutoModelForCausalLM.from_pretrained(student_model_name)
         print_parameter_counts(self.student_model, STUDENT_MODEL)
+        self.student_model = torch.compile(self.student_model)
 
     def forward(self, input_ids, attention_mask):
         return self.student_model(
@@ -46,19 +50,21 @@ class DistillationModule(pl.LightningModule):
         )
 
     def training_step(self, batch, batch_idx):
-        input_ids = batch["input_ids"]
+        input_ids = batch[0]
 
         # forward student
         outputs = self.student_model(
             input_ids=input_ids,
             labels=input_ids,
         )
+        lr = self.optimizers().param_groups[0]['lr']
 
-        self.log("train_loss", outputs.loss, on_step=True, prog_bar=True)
+        self.log("learning_rate", lr, on_step=True, on_epoch=False, prog_bar=True)
+        self.log("train_loss", outputs.loss, on_step=True, on_epoch=False, prog_bar=True)
         return outputs.loss
 
     def validation_step(self, batch, batch_idx):
-        input_ids = batch["input_ids"]
+        input_ids = batch[0]
 
         outputs = self.student_model(
             input_ids=input_ids,
@@ -71,9 +77,9 @@ class DistillationModule(pl.LightningModule):
         optimizer = AdamW(
             self.student_model.parameters(),
             lr=self.learning_rate,
-            betas=(0.9, 0.95),
-            eps=1e-8,
-            weight_decay=0.1,
+            betas=self.betas,
+            eps=self.eps,
+            weight_decay=self.weight_decay,
         )
 
         scheduler = get_cosine_schedule_with_warmup(
@@ -93,13 +99,19 @@ if __name__ == "__main__":
     OUTPUT_DIR = "models/DistLlama-3.2-1B"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    BATCH_SIZE = 1
-    EPOCHS = 10
+    EPOCHS = 1
+    BATCH_SIZE = 2
+    ACC_GRAD_BATCHES = 2
     MAX_LENGTH = 2048
-    LEARNING_RATE = 1e-4
-    WARMUP_STEPS = 1000
-    ALPHA = 0.8
-    TEMPERATURE = 2.0
+    VAL_CHECK_INTERVAL = 0.25
+
+    # optimizer
+    GRAD_CLIP_VAL = 1.0
+    LEARNING_RATE = 5e-5
+    WARMUP_STEPS = 400
+    BETAS = (0.9, 0.95)
+    EPS = 1e-8
+    WEIGHT_DECAY = 0.1
 
     wandb_logger = WandbLogger(
         name="T: DeepSeek-67B, S: Llama-3.2-1B",
@@ -109,7 +121,7 @@ if __name__ == "__main__":
     # Load Dataset
     print(f"Loading dataset from {DATASET_PATH} ...")
     input_ids_np = np.load(DATASET_PATH)
-    input_ids_np = input_ids_np.reshape(-1, BATCH_SIZE, MAX_LENGTH)
+    input_ids_np = input_ids_np.reshape(-1, MAX_LENGTH)
 
     ds = TensorDataset(torch.tensor(input_ids_np, dtype=torch.long))
     train_ds, val_ds = torch.utils.data.random_split(ds, [0.9, 0.1])
@@ -119,13 +131,13 @@ if __name__ == "__main__":
         train_ds,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=4,
+        num_workers=16,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=4,
+        num_workers=16,
     )
 
     torch.set_float32_matmul_precision("high")
@@ -133,23 +145,32 @@ if __name__ == "__main__":
     # Create Lightning Module (DistillationModule)
     distill_module = DistillationModule(
         student_model_name=STUDENT_MODEL,
-        alpha=ALPHA,
-        temperature=TEMPERATURE,
         learning_rate=LEARNING_RATE,
         warmup_steps=WARMUP_STEPS,
     )
-    distill_module = torch.compile(distill_module)
+
+    # Checkpoint Callback
+    checkpoint_callback = ModelCheckpoint(
+        dirpath = OUTPUT_DIR,
+        filename = "{epoch}-{val_loss:.2f}",
+        monitor="val_loss",
+        save_top_k=1,
+        mode="min",
+        save_on_train_epoch_end=False,
+    )
 
     # Setup Trainer
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
         default_root_dir=OUTPUT_DIR,
         logger=wandb_logger,
-        val_check_interval=0.5,
-        gradient_clip_val=1.0,
-        accumulate_grad_batches=32,
+        val_check_interval=VAL_CHECK_INTERVAL,
+        gradient_clip_val=GRAD_CLIP_VAL,
+        accumulate_grad_batches=ACC_GRAD_BATCHES,
         precision="bf16-mixed",
         accelerator="auto",
+        log_every_n_steps=1,
+        callbacks=[checkpoint_callback],
     )
     trainer.fit(distill_module, train_loader, val_loader)
 
