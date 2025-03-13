@@ -27,7 +27,7 @@ if __name__ == "__main__":
         max_tokens=MAX_NEW_TOKENS,
     )
 
-    TEACHER_MODEL = "./models/tinyllama-q4.gguf"
+    TEACHER_MODEL = "deepseek-ai/deepseek-llm-67b-base"
     STUDENT_MODEL = "TinyLlama/TinyLlama_v1.1"
     OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
