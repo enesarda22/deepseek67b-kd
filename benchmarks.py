@@ -4,7 +4,7 @@ from datasets import load_dataset
 
 class SuperGLUE:
     def __init__(self, task="boolq", split="train"):
-        self.dataset = load_dataset("super_glue", task, split=split)
+        self.dataset = load_dataset("super_glue", task, split=split, trust_remote_code=True)
         self.metric = evaluate.load("super_glue", task)
 
     @staticmethod
@@ -38,7 +38,7 @@ class SuperGLUE:
 
 class GLUE:
     def __init__(self, task="sst2", split="train"):
-        self.dataset = load_dataset("glue", task, split=split)
+        self.dataset = load_dataset("glue", task, split=split, trust_remote_code=True)
         self.metric = evaluate.load("glue", task)
 
     @staticmethod
@@ -68,7 +68,7 @@ class GLUE:
 
 class SQuAD:
     def __init__(self, split="train"):
-        self.dataset = load_dataset("squad", split=split)
+        self.dataset = load_dataset("squad", split=split, trust_remote_code=True)
         self.metric = evaluate.load("squad")
 
     @staticmethod

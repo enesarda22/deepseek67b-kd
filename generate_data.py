@@ -18,7 +18,7 @@ def generate_text(batch):
 
 
 if __name__ == "__main__":
-    NUM_TOKENS = 100_000_000
+    NUM_TOKENS = 3 * 2**25  # 100_663_296 tokens
     MAX_NEW_TOKENS = 10  # hf: 222 tok/s, llama.cpp: 500 tok/s, vllm: 544
     BATCH_SIZE = 1
     sampling_params = SamplingParams(
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     )
 
     TEACHER_MODEL = "deepseek-ai/deepseek-llm-67b-base"
-    STUDENT_MODEL = "TinyLlama/TinyLlama_v1.1"
+    STUDENT_MODEL = "TinyLlama/TinyLlama_v1.1"  # TODO: use llama3
     OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
         trust_remote_code=True,
         quantization="bitsandbytes",
         load_format="bitsandbytes",
-        tensor_parallel_size=4,
+        tensor_parallel_size=2,
     )
     student_tokenizer = AutoTokenizer.from_pretrained(STUDENT_MODEL)
     print("Teacher model loaded!")
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     del texts
 
     # fineweb-edu --- General Language Understanding
-    ds = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT", split="train", streaming=True)
+    ds = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT", split="train", streaming=True, trust_remote_code=True)
     for batch in tqdm(ds.iter(BATCH_SIZE)):
         generated_texts = generate_text(batch["text"])
 

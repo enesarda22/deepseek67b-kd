@@ -7,11 +7,15 @@ channels:
 dependencies:
   - python=3.10
   - pytorch
-  - vllm
   - transformers
   - sentencepiece
   - accelerate
+  - bitsandbytes
+  - scikit-learn
   - datasets
   - evaluate
   - conda-forge::pytorch-lightning
   - wandb
+  - pip
+  - pip:
+    - vllm
