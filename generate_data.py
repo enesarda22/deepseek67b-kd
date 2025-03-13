@@ -19,8 +19,8 @@ def generate_text(batch):
 
 if __name__ == "__main__":
     NUM_TOKENS = 3 * 2**25  # 100_663_296 tokens
-    MAX_NEW_TOKENS = 10  # hf: 222 tok/s, llama.cpp: 500 tok/s, vllm: 544
-    BATCH_SIZE = 1
+    MAX_NEW_TOKENS = 128  # hf: 222 tok/s, llama.cpp: 500 tok/s, vllm: 544 tok/s
+    BATCH_SIZE = 32
     sampling_params = SamplingParams(
         temperature=1.1,
         top_p=0.9,
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     )
 
     TEACHER_MODEL = "deepseek-ai/deepseek-llm-67b-base"
-    STUDENT_MODEL = "TinyLlama/TinyLlama_v1.1"  # TODO: use llama3
+    STUDENT_MODEL = "meta-llama/Llama-3.2-1B"
     OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "data")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -49,14 +49,17 @@ if __name__ == "__main__":
     # SuperGLUE --- Binary Question-Answer
     bench = SuperGLUE(task="boolq", split="train")
     ds1 = bench.dataset.map(lambda x: {"text": bench.get_train_prompt(x)}, batched=False)
+    ds1 = ds1.select(np.random.randint(0, len(ds1), 8192))
 
     # GLUE --- Sentiment Analysis
     bench = GLUE(task="sst2", split="train")
     ds2 = bench.dataset.map(lambda x: {"text": bench.get_train_prompt(x)}, batched=False)
+    ds2 = ds2.select(np.random.randint(0, len(ds2), 8192))
 
     # SQuAD --- Question-Answer
     bench = SQuAD(split="train")
     ds3 = bench.dataset.map(lambda x: {"text": bench.get_train_prompt(x)}, batched=False)
+    ds3 = ds3.select(np.random.randint(0, len(ds3), 8192))
 
     texts = ds1["text"] + ds2["text"] + ds3["text"]
     del ds1, ds2, ds3
