@@ -3,7 +3,7 @@ import os
 import numpy as np
 import torch
 from pytorch_lightning.loggers import WandbLogger
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, TensorDataset
 from torch.optim import AdamW
 from transformers import (
     AutoModelForCausalLM,
@@ -18,25 +18,10 @@ def print_parameter_counts(model, model_name):
     print(f"{model_name} -- Total parameters: {total_params:,}")
 
 
-class MyDataset(Dataset):
-    def __init__(self, input_ids_np, num_samples_per_epoch):
-        self.input_ids_np = input_ids_np
-        self.max_start = len(input_ids_np) - MAX_LENGTH
-        self.num_samples_per_epoch = num_samples_per_epoch
-
-    def __len__(self):
-        return self.num_samples_per_epoch
-
-    def __getitem__(self, idx):
-        start_idx = np.random.randint(0, self.max_start+1)
-        sequence = self.input_ids_np[start_idx : start_idx + MAX_LENGTH]
-        return {"input_ids": torch.tensor(sequence, dtype=torch.long)}
-
-
 class DistillationModule(pl.LightningModule):
     def __init__(
             self,
-            student_model_name_or_path,
+            student_model_name,
             alpha=0.8,
             temperature=1.0,
             learning_rate=1e-4,
@@ -51,8 +36,8 @@ class DistillationModule(pl.LightningModule):
         self.warmup_steps = warmup_steps
 
         # Load models
-        self.student_model = AutoModelForCausalLM.from_pretrained(student_model_name_or_path)
-        print_parameter_counts(self.student_model, STUDENT_CKPT)
+        self.student_model = AutoModelForCausalLM.from_pretrained(student_model_name)
+        print_parameter_counts(self.student_model, STUDENT_MODEL)
 
     def forward(self, input_ids, attention_mask):
         return self.student_model(
@@ -103,9 +88,9 @@ if __name__ == "__main__":
     seed_everything(42)
 
     # Paths
-    DATASET_PATH = "data/tokenized_fineweb-edu.npy"
-    STUDENT_CKPT = "./llama2-7b-hf"
-    OUTPUT_DIR = "models/DistLlama2-7B"
+    DATASET_PATH = "data/tokenized_data.npy"
+    STUDENT_MODEL = "meta-llama/Llama-3.2-1B"
+    OUTPUT_DIR = "models/DistLlama-3.2-1B"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     BATCH_SIZE = 1
@@ -117,20 +102,17 @@ if __name__ == "__main__":
     TEMPERATURE = 2.0
 
     wandb_logger = WandbLogger(
-        name="T: DeepSeek-67B, S: Llama2-7B",
+        name="T: DeepSeek-67B, S: Llama-3.2-1B",
         project="deepseek67b-kd",
     )
 
     # Load Dataset
     print(f"Loading dataset from {DATASET_PATH} ...")
     input_ids_np = np.load(DATASET_PATH)
+    input_ids_np = input_ids_np.reshape(-1, BATCH_SIZE, MAX_LENGTH)
 
-    train_size = int(0.9 * len(input_ids_np))
-    train_input_ids_np = input_ids_np[:train_size]
-    test_input_ids_np = input_ids_np[train_size:]
-
-    train_ds = MyDataset(input_ids_np, num_samples_per_epoch=2 * (train_size // MAX_LENGTH))
-    val_ds = MyDataset(input_ids_np, num_samples_per_epoch=len(test_input_ids_np) // MAX_LENGTH)
+    ds = TensorDataset(torch.tensor(input_ids_np, dtype=torch.long))
+    train_ds, val_ds = torch.utils.data.random_split(ds, [0.9, 0.1])
     print(f"Train set: {len(train_ds)}, Val set: {len(val_ds)}")
 
     train_loader = DataLoader(
@@ -150,7 +132,7 @@ if __name__ == "__main__":
 
     # Create Lightning Module (DistillationModule)
     distill_module = DistillationModule(
-        student_model_name_or_path=STUDENT_CKPT,
+        student_model_name=STUDENT_MODEL,
         alpha=ALPHA,
         temperature=TEMPERATURE,
         learning_rate=LEARNING_RATE,
