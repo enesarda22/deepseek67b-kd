@@ -6,6 +6,7 @@ from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader, TensorDataset
 from torch.optim import AdamW
 from transformers import (
+    AutoTokenizer,
     AutoModelForCausalLM,
     get_cosine_schedule_with_warmup,
 )
@@ -40,7 +41,7 @@ class DistillationModule(pl.LightningModule):
 
         # Load models
         self.student_model = AutoModelForCausalLM.from_pretrained(student_model_name)
-        print_parameter_counts(self.student_model, STUDENT_MODEL)
+        print_parameter_counts(self.student_model, student_model_name)
         self.student_model = torch.compile(self.student_model)
 
     def forward(self, input_ids, attention_mask):
@@ -94,27 +95,27 @@ if __name__ == "__main__":
     seed_everything(42)
 
     # Paths
-    DATASET_PATH = "data/tokenized_data.npy"
-    STUDENT_MODEL = "meta-llama/Llama-3.2-1B"
-    OUTPUT_DIR = "models/DistLlama-3.2-1B"
+    DATASET_PATH = "data/tokenized_finetune_data.npy"
+    STUDENT_MODEL = "enesarda22/Llama-3.2-1B-DeepSeek67B-Distilled"
+    OUTPUT_DIR = "models/FineTuned-DistLlama-3.2-1B"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     EPOCHS = 1
     BATCH_SIZE = 2
-    ACC_GRAD_BATCHES = 2
+    ACC_GRAD_BATCHES = 1
     MAX_LENGTH = 2048
     VAL_CHECK_INTERVAL = 0.25
 
     # optimizer
     GRAD_CLIP_VAL = 1.0
-    LEARNING_RATE = 5e-5
-    WARMUP_STEPS = 400
+    LEARNING_RATE = 1e-5
+    WARMUP_STEPS = 200
     BETAS = (0.9, 0.95)
     EPS = 1e-8
     WEIGHT_DECAY = 0.1
 
     wandb_logger = WandbLogger(
-        name="T: DeepSeek-67B, S: Llama-3.2-1B",
+        name="Med-FT Llama-3.2-1B-DeepSeek67B-Distilled",
         project="deepseek67b-kd",
     )
 
@@ -176,4 +177,6 @@ if __name__ == "__main__":
 
     # Save final model
     distill_module.student_model.save_pretrained(OUTPUT_DIR)
+    student_tokenizer = AutoTokenizer.from_pretrained(STUDENT_MODEL)
+    student_tokenizer.save_pretrained(OUTPUT_DIR)
     print(f"Done! Final model saved to {OUTPUT_DIR}")
