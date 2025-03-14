@@ -59,7 +59,7 @@ class SuperGLUE(Benchmark):
 
     @staticmethod
     def answer_to_prediction(answer, sample):
-        return int(answer == "yes")
+        return int(answer.strip().lower() == "yes")
 
     @staticmethod
     def sample_to_reference(sample):
@@ -90,7 +90,7 @@ class GLUE(Benchmark):
 
     @staticmethod
     def answer_to_prediction(answer, sample):
-        return int(answer == "positive")
+        return int(answer.strip().lower() == "positive")
 
     @staticmethod
     def sample_to_reference(sample):
@@ -129,7 +129,7 @@ class SQuAD(Benchmark):
 
     @staticmethod
     def answer_to_prediction(answer, sample):
-        return {"id": sample["id"], "prediction_text": answer}
+        return {"id": sample["id"], "prediction_text": answer.strip()}
 
     @staticmethod
     def sample_to_reference(sample):
