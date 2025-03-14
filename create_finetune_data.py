@@ -2,6 +2,7 @@ import itertools
 import os
 
 import numpy as np
+from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
@@ -20,7 +21,10 @@ if __name__ == "__main__":
     bench = MedMAQA(split="train")
     ds2 = bench.dataset.map(lambda x: {"text": bench.get_train_prompt(x)}, batched=False)
 
-    texts = ds1["text"] + ds2["text"]
+    bench = PubMedQA(name="pqa_artificial", split="train")
+    ds3 = bench.dataset.map(lambda x: {"text": bench.get_train_prompt(x)}, batched=False)
+
+    texts = ds1["text"] + ds2["text"] + ds3["text"]
 
     input_ids_list = []
     count = 0
@@ -33,7 +37,7 @@ if __name__ == "__main__":
         input_ids_list.extend(input_ids)
 
     input_ids_np = np.array(input_ids_list, dtype=np.uint32)
-    input_ids_np = input_ids_np[:2**21]
+    input_ids_np = input_ids_np[:2**25]  # 33_554_432 tokens
 
     fn = os.path.join(OUTPUT_DIR, "tokenized_finetune_data")
     np.save(fn, input_ids_np)
