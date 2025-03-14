@@ -141,6 +141,13 @@ class MedMAQA(Benchmark):
         super().__init__()
         self.dataset = load_dataset("bigbio/med_qa", split=split, trust_remote_code=True)
         self.metric = evaluate.load("accuracy")
+        self.keys = {
+            "a": 0,
+            "b": 1,
+            "c": 2,
+            "d": 3,
+            "e": 4,
+        }
 
     @staticmethod
     def get_train_prompt(sample):
@@ -182,13 +189,11 @@ class MedMAQA(Benchmark):
         {sample["options"][4]["key"]}) {sample["options"][4]["value"]}
         Correct Answer:"""
 
-    @staticmethod
-    def answer_to_prediction(answer, sample):
-        return answer.strip().lower()
+    def answer_to_prediction(self, answer, sample):
+        return self.keys[answer.strip().lower()]
 
-    @staticmethod
-    def sample_to_reference(sample):
-        return sample["answer_idx"].strip().lower()
+    def sample_to_reference(self, sample):
+        return self.keys[sample["answer_idx"].strip().lower()]
 
 
 class PubMedQA(Benchmark):
@@ -227,8 +232,8 @@ class PubMedQA(Benchmark):
 
     @staticmethod
     def answer_to_prediction(answer, sample):
-        return answer.strip().lower()
+        return int(answer.strip().lower() == "yes")
 
     @staticmethod
     def sample_to_reference(sample):
-        return sample["final_decision"].strip().lower()
+        return int(sample["final_decision"].strip().lower() == "yes")
