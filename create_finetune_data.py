@@ -15,16 +15,13 @@ if __name__ == "__main__":
     student_model_name = "meta-llama/Llama-3.2-1B"
     student_tokenizer = AutoTokenizer.from_pretrained(student_model_name)
 
-    bench = PubMedQA(split="train")
+    bench = MedMAQA(split="train")
     ds1 = bench.dataset.map(lambda x: {"text": bench.get_train_prompt(x)}, batched=False)
 
-    bench = MedMAQA(split="train")
+    bench = PubMedQA(split="train")
     ds2 = bench.dataset.map(lambda x: {"text": bench.get_train_prompt(x)}, batched=False)
 
-    bench = PubMedQA(name="pqa_artificial", split="train")
-    ds3 = bench.dataset.map(lambda x: {"text": bench.get_train_prompt(x)}, batched=False)
-
-    texts = ds1["text"] + ds2["text"] + ds3["text"]
+    texts = ds1["text"] + ds2["text"]
 
     input_ids_list = []
     count = 0
