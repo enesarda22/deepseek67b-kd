@@ -19,7 +19,7 @@ def generate_text(batch):
 
 if __name__ == "__main__":
     NUM_TOKENS = 3 * 2**25  # 100_663_296 tokens
-    MAX_NEW_TOKENS = 128  # hf: 222 tok/s, llama.cpp: 500 tok/s, vllm: 544 tok/s
+    MAX_NEW_TOKENS = 512  # hf: 222 tok/s, llama.cpp: 500 tok/s, vllm: 544 tok/s
     BATCH_SIZE = 32
     sampling_params = SamplingParams(
         temperature=1.1,
