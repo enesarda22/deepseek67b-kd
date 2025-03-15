@@ -197,9 +197,10 @@ class MedMAQA(Benchmark):
 
 
 class PubMedQA(Benchmark):
-    def __init__(self, name="pqa_labeled", split="train"):
+    def __init__(self, split="train"):
         super().__init__()
-        self.dataset = load_dataset("qiaojin/PubMedQA", name, split=split, trust_remote_code=True)
+        name = "pqa_labeled" if split == "validation" else "pqa_artificial"
+        self.dataset = load_dataset("qiaojin/PubMedQA", name, split="train", trust_remote_code=True)
         self.metric = evaluate.load("accuracy")
 
     @staticmethod

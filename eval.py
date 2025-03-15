@@ -5,21 +5,21 @@ from vllm import LLM, SamplingParams
 
 if __name__ == "__main__":
     BATCH_SIZE = 32
-    MODEL_NAME = "enesarda22/Llama-3.2-1B-DeepSeek67B-Distilled"
-    BENCH_NAMES = ["SuperGLUE", "GLUE", "SQuAD"]  # SuperGLUE, GLUE, SQuAD, MedMAQA, PubMedQA
+    MODEL_NAME = "enesarda22/Med-Llama-3.1-8B-DeepSeek67B-Distilled"
+    BENCH_NAMES = ["MedMAQA", "PubMedQA"]  # SuperGLUE, GLUE, SQuAD, XTREME, MedMAQA, PubMedQA
 
     model = LLM(
         model=MODEL_NAME,
         dtype="bfloat16",
         trust_remote_code=True,
-        tensor_parallel_size=4,
+        tensor_parallel_size=2,
     )
     print("Model loaded!")
     results = {}
     for bench_name in BENCH_NAMES:
         sampling_params = SamplingParams(
             temperature=0,  # no sampling
-            max_tokens=10 if bench_name == "SQuAD" else 1,
+            max_tokens=10 if bench_name in ["SQuAD", "XTREME"] else 1,
             stop=["\n", model.get_tokenizer().eos_token]
         )
 
