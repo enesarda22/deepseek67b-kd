@@ -1,26 +1,27 @@
 import os
+from functools import partial
+from typing import Optional, Union
 
 import numpy as np
 import torch
-from pytorch_lightning.loggers import WandbLogger
+from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+
 from torch.utils.data import DataLoader, TensorDataset
-from torch.optim import AdamW
+from torch.optim import AdamW, Optimizer
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     get_cosine_schedule_with_warmup,
 )
-import pytorch_lightning as pl
-from pytorch_lightning import seed_everything
-from pytorch_lightning.callbacks import ModelCheckpoint
+
+import lightning as L
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.strategies import FSDPStrategy
+from lightning.pytorch.loggers import WandbLogger
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
 
-def print_parameter_counts(model, model_name):
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"{model_name} -- Total parameters: {total_params:,}")
-
-
-class DistillationModule(pl.LightningModule):
+class DistillationModule(L.LightningModule):
     def __init__(
             self,
             student_model_name,
@@ -40,8 +41,13 @@ class DistillationModule(pl.LightningModule):
         self.weight_decay = weight_decay
 
         # Load models
-        self.student_model = AutoModelForCausalLM.from_pretrained(student_model_name)
-        print_parameter_counts(self.student_model, student_model_name)
+        self.student_model_name = student_model_name
+        self.student_model = None
+
+    def configure_model(self):
+        if self.student_model is not None:
+            return
+        self.student_model = AutoModelForCausalLM.from_pretrained(self.student_model_name, torch_dtype="bfloat16")
         self.student_model = torch.compile(self.student_model)
 
     def forward(self, input_ids, attention_mask):
@@ -71,7 +77,7 @@ class DistillationModule(pl.LightningModule):
             input_ids=input_ids,
             labels=input_ids,
         )
-        self.log("val_loss", outputs.loss, on_epoch=True, prog_bar=True)
+        self.log("val_loss", outputs.loss, on_epoch=True, prog_bar=True, sync_dist=True)
         return outputs.loss
 
     def configure_optimizers(self):
@@ -90,14 +96,24 @@ class DistillationModule(pl.LightningModule):
         )
         return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
+    def configure_gradient_clipping(
+        self,
+        optimizer: Optimizer,
+        gradient_clip_val: Optional[Union[int, float]] = None,
+        gradient_clip_algorithm: Optional[str] = None,
+    ) -> None:
+        assert gradient_clip_algorithm in ('norm', None), gradient_clip_algorithm
+        norm = torch.nn.utils.clip_grad_norm_(self.student_model.parameters(), gradient_clip_val)
+        self.log("grad_norm", norm, on_step=True, on_epoch=False, prog_bar=True)
+
 
 if __name__ == "__main__":
-    seed_everything(42)
+    L.seed_everything(42)
 
     # Paths
     DATASET_PATH = "data/tokenized_finetune_data.npy"
-    STUDENT_MODEL = "enesarda22/Llama-3.2-1B-DeepSeek67B-Distilled"
-    OUTPUT_DIR = "models/FineTuned-DistLlama-3.2-1B"
+    STUDENT_MODEL = "enesarda22/Llama-3.1-8B-DeepSeek67B-Distilled"
+    OUTPUT_DIR = "models/FineTuned-DistLlama-3.1-8B"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     EPOCHS = 1
@@ -114,8 +130,19 @@ if __name__ == "__main__":
     EPS = 1e-8
     WEIGHT_DECAY = 0.1
 
+    # hardware
+    PRECISION = "bf16-true"
+    ACCELERATOR = "cuda"
+    DEVICES = 2
+
+    auto_wrap_policy = partial(transformer_auto_wrap_policy, transformer_layer_cls={LlamaDecoderLayer})
+    STRATEGY = FSDPStrategy(
+        auto_wrap_policy=auto_wrap_policy,
+    )
+
+    # logger
     wandb_logger = WandbLogger(
-        name="Med-FT Llama-3.2-1B-DeepSeek67B-Distilled",
+        name="Med-FT Llama-3.1-8B-DeepSeek67B-Distilled",
         project="deepseek67b-kd",
     )
 
@@ -161,15 +188,17 @@ if __name__ == "__main__":
     )
 
     # Setup Trainer
-    trainer = pl.Trainer(
+    trainer = L.Trainer(
         max_epochs=EPOCHS,
         default_root_dir=OUTPUT_DIR,
         logger=wandb_logger,
         val_check_interval=VAL_CHECK_INTERVAL,
         gradient_clip_val=GRAD_CLIP_VAL,
         accumulate_grad_batches=ACC_GRAD_BATCHES,
-        precision="bf16-mixed",
-        accelerator="auto",
+        precision=PRECISION,
+        accelerator=ACCELERATOR,
+        devices=DEVICES,
+        strategy=STRATEGY,
         log_every_n_steps=1,
         callbacks=[checkpoint_callback],
     )
