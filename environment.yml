@@ -1,19 +1,21 @@
 name: deepseek67b-kd
 channels:
+  - nvidia
+  - pytorch
   - conda-forge
   - defaults
-  - nvidia  # For cuda
-  - pytorch
 dependencies:
   - python=3.10
   - pytorch
+  - torchaudio
+  - torchvision
   - transformers
   - sentencepiece
   - accelerate
   - scikit-learn
   - datasets
   - evaluate
-  - conda-forge::pytorch-lightning
+  - lightning
   - wandb
   - pip
   - pip:
