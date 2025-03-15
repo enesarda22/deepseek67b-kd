@@ -237,3 +237,46 @@ class PubMedQA(Benchmark):
     @staticmethod
     def sample_to_reference(sample):
         return int(sample["final_decision"].strip().lower() == "yes")
+
+
+class XTREME(Benchmark):
+    def __init__(self, split="validation"):
+        super().__init__()
+        self.dataset = load_dataset("xtreme", "XNLI", split=split, trust_remote_code=True)
+        self.dataset = self.dataset.filter(lambda s: s["language"] == "en")
+        self.metric = evaluate.load("accuracy")
+        self.keys = {
+            "neutral": 0,
+            "contradiction": 1,
+            "entailment": 2,
+        }
+
+    @staticmethod
+    def get_train_prompt(sample):
+        return f"""Premise: {sample['sentence1']}
+        Hypothesis: {sample['sentence2']}
+        Label: {sample['gold_label']}"""
+
+    @staticmethod
+    def get_validation_prompt(sample):
+        return f"""Premise: A man is playing a guitar on stage.
+        Hypothesis: A musician is performing live.
+        Label: Entailment
+
+        Premise: A woman is sitting at a table eating a meal.
+        Hypothesis: A woman is running a marathon.
+        Label: Contradiction
+
+        Premise: Two people are walking on a beach.
+        Hypothesis: Some people are outside.
+        Label: Neutral
+
+        Premise: {sample['sentence1']}
+        Hypothesis: {sample['sentence2']}
+        Label:"""
+
+    def answer_to_prediction(self, answer, sample):
+        return self.keys[answer.strip().lower()]
+
+    def sample_to_reference(self, sample):
+        return self.keys[sample["gold_label"].strip().lower()]
