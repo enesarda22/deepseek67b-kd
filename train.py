@@ -179,8 +179,8 @@ if __name__ == "__main__":
 
     # Checkpoint Callback
     checkpoint_callback = ModelCheckpoint(
-        dirpath = OUTPUT_DIR,
-        filename = "{epoch}-{val_loss:.2f}",
+        dirpath=OUTPUT_DIR,
+        filename="{epoch}-{val_loss:.2f}",
         monitor="val_loss",
         save_top_k=1,
         mode="min",
